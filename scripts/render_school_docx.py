@@ -65,7 +65,7 @@ def lesson_length_exception(lesson):
 
 
 def verify_core_pedagogy_detail(lesson):
-    if exam_only_lesson(lesson):
+    if lesson_length_exception(lesson):
         return
     n=lesson['number']
     labels={'teaching_methods':'教法','learning_methods':'学法','preparation':'课前预习任务'}
