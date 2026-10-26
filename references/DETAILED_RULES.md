@@ -2,7 +2,7 @@
 
 ---
 name: bxmlesson-planner-v2
-version: 2.2.1
+version: 2.2.4
 summary: 上传教学进度表，自动生成指定或全部课次的完整 Word 教案。
 description: 根据教学进度表生成完整教案，支持指定课次或全部课次，自动套用模板并校验格式。
 ---
