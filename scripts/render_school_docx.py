@@ -33,6 +33,11 @@ REQUIRED_TEXT_FIELDS=['chapter_short','foundation','cognitive_practice','learnin
 'key_points','key_solutions','hard_points','hard_solutions','teaching_methods','learning_methods','resources','equipment',
 'preparation','homework_text','reflection_achievement','reflection_issues','reflection_improvements']
 ASSESS_FIELDS=['module','weight','evidence','criteria','evaluator','feedback']
+MIN_LESSON_CONTENT_CHARS=4500
+RENDERED_TOP_LEVEL_FIELDS=tuple(
+    key for key in (*INDEX.keys(), 'design_thought', 'implementation', 'assessment')
+    if key not in {'form', 'location', 'hours'}
+)
 # Content-quality checks for ordinary teaching sessions. An exam can be concise,
 # but a teaching session must not pass by listing bare method names.
 MIN_CONTENT_CHARS={'teaching_methods':180,'learning_methods':110,'preparation':110}
@@ -44,8 +49,19 @@ NUMBERED_ITEM=re.compile(r'(?m)^\s*(?:[1-9]\d*[.、．]|[（(][1-9]\d*[)）])\s*
 
 def exam_only_lesson(lesson):
     title=str(lesson.get('chapter_short','')).strip().replace(' ','')
-    # "能力检测评讲/考核讲评" is still instruction, not a pure exam.
-    return bool(re.match(r'^(?:第\d+次课)?(?:期末考试|期中考试|随堂考试|考试|结课考试)(?:$|[（(:：])',title))
+    title=re.sub(r'^第\d+次课','',title)
+    # Review/feedback lessons are still instruction, not pure exams.
+    return bool(re.search(r'(?:期末考试|期中考试|随堂考试|结课考试|考试)(?:$|[（(:：])',title))
+
+
+def practice_week_without_scheduled_hours(lesson):
+    title=str(lesson.get('chapter_short','')).strip().replace(' ','')
+    hours=str(lesson.get('hours','')).strip()
+    return not hours and bool(re.search(r'(?:实践周|实习周)',title))
+
+
+def lesson_length_exception(lesson):
+    return exam_only_lesson(lesson) or practice_week_without_scheduled_hours(lesson)
 
 
 def verify_core_pedagogy_detail(lesson):
@@ -74,6 +90,20 @@ def verify_core_pedagogy_detail(lesson):
 
 def flatten_text(p):
     return re.sub(r'\s+', '',str(p or ''))
+
+
+def collect_rendered_text(value):
+    """Collect only strings that will actually be written into the school template."""
+    if isinstance(value,dict):return ''.join(collect_rendered_text(v) for v in value.values())
+    if isinstance(value,list):return ''.join(collect_rendered_text(v) for v in value)
+    if isinstance(value,str):return value
+    return ''
+
+
+def lesson_content_chars(lesson):
+    """Count visible authored text, excluding schedule metadata and unrendered keys."""
+    content=''.join(collect_rendered_text(lesson.get(key)) for key in RENDERED_TOP_LEVEL_FIELDS)
+    return len(flatten_text(content))
 
 
 def write_cell(cell, content, *, bold=False, align=None, leading=False):
@@ -113,6 +143,7 @@ def validate_draft(data):
     lessons=data.get('lessons')
     if not isinstance(lessons,list) or not lessons:raise ValueError('JSON 必须包含非空 lessons 数组')
     nums=[]
+    lesson_char_counts={}
     for lesson in lessons:
         n=lesson.get('number')
         if not isinstance(n,int) or n<1: raise ValueError(f'课次编号无效：{n}')
@@ -121,6 +152,13 @@ def validate_draft(data):
             missed=[k for k in REQUIRED_TEXT_FIELDS if not isinstance(lesson.get(k),str) or not lesson[k].strip()]
             raise ValueError(f'第{n}次课缺少必须撰写的内容：{missed}')
         verify_core_pedagogy_detail(lesson)
+        visible_chars=lesson_content_chars(lesson)
+        lesson_char_counts[n]=visible_chars
+        if not lesson_length_exception(lesson) and visible_chars<MIN_LESSON_CONTENT_CHARS:
+            raise ValueError(
+                f'第{n}次课正文仅{visible_chars}个去空白字符，普通授课课次最低要求{MIN_LESSON_CONTENT_CHARS}字符，'
+                '建议控制在4,500—5,000字符。请补充本课具体的教学分析、教师引导、学生活动、任务产出、反馈与反思后重新校验；不得重复堆字。'
+            )
         imp=lesson.get('implementation') or {}
         if not isinstance(imp.get('before'),dict) or not isinstance(imp.get('after'),dict):
             raise ValueError(f'第{n}次课缺少课前或课后教学活动')
@@ -166,21 +204,22 @@ def validate_draft(data):
                 durations.append(int(tm.group(1)))
             if sum(durations)!=90:raise ValueError(f'第{n}次课课中时间总和{sum(durations)}分钟，不是90分钟')
     if len(set(nums))!=len(nums):raise ValueError(f'重复课次：{nums}')
-    # Budget the content authored by the model. Avoid counting fixed column headings as writing volume.
-    # Usable Chinese character count is a simplified non-whitespace count.
-    total=0
-    for lesson in lessons:
-        def collect(x):
-            if isinstance(x,dict):return ''.join(collect(v) for k,v in x.items() if k not in ('form','location'))
-            if isinstance(x,list):return ''.join(collect(v) for v in x)
-            if isinstance(x,str):return x
-            return ''
-        nchar=len(flatten_text(collect(lesson)))
-        total+=nchar
+    # Count only text actually rendered into the school template; ignore hidden or unused fields.
+    total=sum(lesson_char_counts.values())
     ceiling=85000*len(lessons)//16
     if total>ceiling:
-        raise ValueError(f'正文填写字数约{total}，超过{len(lessons)}次课按比例计算上限{ceiling}。请精简后重新生成。')
-    return {'count':len(lessons),'numbers':nums,'estimated_fill_chars':total,'ceiling':ceiling}
+        raise ValueError(f'正文填写字数约{total}，超过{len(lessons)}次课按比例计算上限{ceiling}。请精简重复内容后重新生成。')
+    return {
+        'count':len(lessons),
+        'numbers':nums,
+        'estimated_fill_chars':total,
+        'ceiling':ceiling,
+        'lesson_char_counts':[
+            {'number':lesson['number'],'chars':lesson_char_counts[lesson['number']],
+             'minimum_required':None if lesson_length_exception(lesson) else MIN_LESSON_CONTENT_CHARS}
+            for lesson in lessons
+        ]
+    }
 
 
 def fill_table(table, lesson):
