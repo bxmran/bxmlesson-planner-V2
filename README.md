@@ -1,2 +1,38 @@
-# bxmlesson-planner-V2
-bxmlesson-planner-V2-skill-doubao
+# Bxmlesson Planner V2
+
+上传教学进度表，生成指定或全部课次的完整、可编辑 Word 教案。
+
+## 一句话安装
+
+在支持 GitHub Skill 安装的 AI 工作环境中发送：
+
+```text
+请帮我安装这个 Skill：https://github.com/bxmran/bxmlesson-planner-V2
+```
+
+如果当前 AI 不支持直接从 GitHub 安装，也可以下载仓库、导入技能文件夹（根目录包含 `SKILL.md`）。**需要宿主 AI 能够读取 Word 并执行 Python**；普通聊天环境仅能读取说明时，无法保证生成模板版式的 DOCX。
+
+## 使用
+
+安装后，上传教学进度计划表，并发送：
+
+```text
+使用 bxmlesson-planner V2，按我上传的进度表生成第1—16次课的完整教案，只给我一个 Word 文件。
+```
+
+也可以说“生成第1—24次课”“生成第1—12、14—17次课”或“按计划表全部生成”。**课次数量没有固定上限**，需以宿主的可用执行能力为准。
+
+技能内置专用空白模板，只生成“第X次课”教案及其各栏目，不另加封面；没有依据的信息保持空白，不会自动填写教师个人资料。
+
+## 环境及检查
+
+- Python 3 和 `python-docx`（见 `requirements.txt`）
+- 核心入口：`SKILL.md`
+- 本地校验：`python -m unittest discover -s tests -v`
+- 版本：**2.2.4**（填写内容固定20磅行距）
+
+技能使用的教学进度表是用户上传文件，不随仓库发布。若用户上传的文件包含人员信息，应按所在单位规定处理。仓库内置学校版式及标识，仅在具有相应使用授权的范围内分发。
+
+## 关于发布
+
+GitHub 上公开的文件可被任何访问者查阅。有关安全说明请见 `SECURITY.md`。
