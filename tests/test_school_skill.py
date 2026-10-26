@@ -29,7 +29,17 @@ class SchoolSkillTests(unittest.TestCase):
             '3. 回答“关键判断应依靠哪些条件”并写出初步理由，把概念清单、案例记录和疑问整理成一页预习卡，上课时带来供分组核对。'
         ])
         phases=['情境导入','新知讲解','案例讨论','任务操作','总结反馈']
-        def row(phase,time):return {'phase':phase,'time':time,'content':'围绕本次课核心内容开展任务','method':'任务驱动法','teacher':'提出问题并指导纠错','student':'分组整理材料并展示','ethics':'诚信与证据意识','goals':'目标1、目标2'}
+        def row(phase,time):
+            return {
+                'phase':phase,
+                'time':time,
+                'content':f'围绕第{n}次课的{phase}环节，明确分析对象、任务边界和本环节产出。教师提供教材中的核心概念与案例材料，要求学生区分事实、解释和结论，并说明本环节结果如何衔接后续任务。',
+                'method':f'采用任务驱动与示例对照组织{phase}，先由教师示范关键步骤，再让学生依据统一标准完成操作；设置易错点核对，完成后进行同伴互评，并根据反馈修订记录。',
+                'teacher':f'教师说明{phase}的目标和评价标准，展示关键示例并追问判断依据；巡视时检查概念误用、证据缺失与推理跳步，选取典型问题即时纠偏，要求学生解释修改理由，并记录常见误区供总结复盘。教师还需把本环节结果与目标对应，提示学生区分证据不足与推理错误，并将共性问题留到总结环节。',
+                'student':f'学生独立阅读材料、标注关键词和疑点，按要求完成记录表；合作时分工核对来源、比较不同判断并汇总分歧，展示结论与依据，收到反馈后完成订正并保留修订痕迹；不能达成一致的事项标记待查。各组对异议保留不同理由，不能用多数意见替代证据。',
+                'ethics':f'强调{phase}中的规范引用和审慎表达；未经核实的信息须标注待核，不把推测写成事实，涉及他人材料时说明来源。',
+                'goals':'目标1、目标2'
+            }
         obj['implementation']={'before':row('课前预习','课前'),
             'during':[row(p,f'{tm}分钟') for p,tm in zip(phases,[10,30,25,20,5])], 'after':row('课后反馈','课后')}
         obj['assessment']=[{'module':name,'weight':weight,'evidence':'工作单','criteria':'判断有依据','evaluator':'教师','feedback':'批注'} for name,weight in [('课前','20%'),('课中','50%'),('课后','30%')]]
@@ -85,7 +95,51 @@ class SchoolSkillTests(unittest.TestCase):
 
     def test_quality_fields_good(self):
         lesson=self.sample_lesson(1)
-        self.assertEqual(validate_draft({'lessons':[lesson]})['count'],1)
+        report=validate_draft({'lessons':[lesson]})
+        self.assertEqual(report['count'],1)
+        self.assertGreaterEqual(report['lesson_char_counts'][0]['chars'],4500)
+        self.assertLessEqual(report['estimated_fill_chars'],report['ceiling'])
+
+    def shorten_lesson_except_core_pedagogy(self, lesson):
+        for field in ('foundation','cognitive_practice','learning_characteristics','knowledge','ability','literacy',
+                      'key_points','key_solutions','hard_points','hard_solutions','resources','equipment',
+                      'homework_text','reflection_achievement','reflection_issues','reflection_improvements'):
+            lesson[field]='简要记录。'
+        lesson['design_thought']={key:'简要设计。' for key in ('intro','before','during','after')}
+        def shorten_stage(stage):
+            for key in ('phase','content','method','teacher','student','ethics','goals'):
+                stage[key]='任务。'
+        shorten_stage(lesson['implementation']['before'])
+        for stage in lesson['implementation']['during']:
+            shorten_stage(stage)
+        shorten_stage(lesson['implementation']['after'])
+        for item in lesson['assessment']:
+            item.update({'evidence':'记录。','criteria':'符合要求。','evaluator':'教师','feedback':'订正。'})
+        return lesson
+
+    def test_short_ordinary_lesson_is_rejected(self):
+        lesson=self.shorten_lesson_except_core_pedagogy(self.sample_lesson(1))
+        with self.assertRaisesRegex(ValueError,'普通授课课次最低要求4500字符'):
+            validate_draft({'lessons':[lesson]})
+
+    def test_exam_lesson_can_use_special_length_rule(self):
+        lesson=self.shorten_lesson_except_core_pedagogy(self.sample_lesson(1))
+        lesson['chapter_short']='期末考试'
+        for field in ('teaching_methods','learning_methods','preparation'):
+            lesson[field]='按考试要求组织、完成与复核。'
+        report=validate_draft({'lessons':[lesson]})
+        self.assertLess(report['lesson_char_counts'][0]['chars'],4500)
+        self.assertIsNone(report['lesson_char_counts'][0]['minimum_required'])
+
+    def test_practice_week_without_hours_uses_special_length_rule(self):
+        lesson=self.shorten_lesson_except_core_pedagogy(self.sample_lesson(1))
+        lesson['chapter_short']='实践周：调研与总结'
+        lesson['hours']=''
+        for stage in lesson['implementation']['during']:
+            stage['time']='按实践任务推进'
+        report=validate_draft({'lessons':[lesson]})
+        self.assertLess(report['lesson_char_counts'][0]['chars'],4500)
+        self.assertIsNone(report['lesson_char_counts'][0]['minimum_required'])
 
     def test_length_limits_and_readable_spacing(self):
         lesson=self.sample_lesson(1)
